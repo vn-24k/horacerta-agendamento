@@ -208,6 +208,39 @@ export default function App() {
   // Canvas confetti ref
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
+  // Carrega agendamentos reais do Supabase na inicializacao
+  useEffect(() => {
+    async function fetchFromSupabase() {
+      try {
+        const data = await supabaseDb.getAppointments();
+        if (data && data.length > 0) {
+          const formatted: Appointment[] = data.map((d: any) => ({
+            id: d.id,
+            professionalName: d.professional_name,
+            professionalWhatsapp: '5511999998888',
+            service: {
+              id: 'srv-' + d.id,
+              name: d.service_name,
+              duration: 45,
+              price: d.price || 0,
+              description: ''
+            },
+            dateStr: d.date_str,
+            timeStr: d.time_str,
+            clientName: d.client_name,
+            clientPhone: d.client_phone,
+            clientNotes: d.client_notes,
+            createdAt: d.created_at
+          }));
+          setAppointmentsList(formatted);
+        }
+      } catch (err) {
+        console.warn('Erro ao carregar do Supabase:', err);
+      }
+    }
+    fetchFromSupabase();
+  }, []);
+
   // Sincroniza serviço padrão ao trocar profissional
   useEffect(() => {
     setSelectedService(currentProf.services[0]);

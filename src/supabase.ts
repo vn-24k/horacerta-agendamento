@@ -1,10 +1,10 @@
 /**
- * Supabase Client Nativo & Ultra-Leve (Zero Dependências Quebradiças)
- * Utiliza fetch nativo com suporte a Auth JWT e REST PostgREST
+ * Supabase Client Oficial do Projeto vn-24k
+ * Conectado ao banco de dados PostgreSQL na nuvem (us-west-1)
  */
 
-export const SUPABASE_URL = "https://ojgnmovzfokdoviydyhs.supabase.co";
-export const SUPABASE_ANON_KEY = "sb_publishable_Ei6sORKS7Ew4lwsyadimvA_gFfjqrUJ";
+export const SUPABASE_URL = "https://hfgxsloyssxwfulyzftt.supabase.co";
+export const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhmZ3hzbG95c3N4d2Z1bHl6ZnR0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2ODQzNzksImV4cCI6MjA5NDI2MDM3OX0.zDw_CGyNPMs4KGEWmDnQMzgh-SccxalFlB2c07CfJv4";
 
 export interface UserSession {
   access_token: string;
@@ -102,15 +102,12 @@ export const supabaseAuth = {
 export const supabaseDb = {
   // Salva agendamento
   async createAppointment(appointment: any) {
-    const session = supabaseAuth.getSession();
-    const token = session?.access_token || SUPABASE_ANON_KEY;
-
     try {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/appointments`, {
         method: "POST",
         headers: {
           "apikey": SUPABASE_ANON_KEY,
-          "Authorization": `Bearer ${token}`,
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
           "Content-Type": "application/json",
           "Prefer": "return=representation"
         },
@@ -121,21 +118,18 @@ export const supabaseDb = {
         return await res.json();
       }
     } catch (e) {
-      console.warn("Aviso: Tabela appointments no Supabase ainda não criada, salvando localmente como fallback seguro.");
+      console.warn("Aviso ao salvar no banco Supabase:", e);
     }
     return null;
   },
 
-  // Lista agendamentos do profissional
+  // Lista agendamentos do banco
   async getAppointments() {
-    const session = supabaseAuth.getSession();
-    if (!session) return [];
-
     try {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/appointments?order=created_at.desc`, {
         headers: {
           "apikey": SUPABASE_ANON_KEY,
-          "Authorization": `Bearer ${session.access_token}`
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`
         }
       });
 
