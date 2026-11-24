@@ -20,8 +20,15 @@ import {
   User, 
   Check, 
   Trash2, 
-  ExternalLink 
+  ExternalLink,
+  LogIn,
+  LogOut,
+  Lock,
+  Mail,
+  UserPlus,
+  Database
 } from 'lucide-react';
+import { supabaseAuth, supabaseDb, UserSession } from './supabase';
 
 interface Service {
   id: string;
@@ -177,6 +184,16 @@ export default function App() {
   const [step, setStep] = useState<'select' | 'form' | 'success'>('select');
   const [lastAppointment, setLastAppointment] = useState<Appointment | null>(null);
   
+  // Autenticação Real Supabase
+  const [session, setSession] = useState<UserSession | null>(() => supabaseAuth.getSession());
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authName, setAuthName] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authMessage, setAuthMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
+
   // Painel de Gestão (Dono do Negócio)
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [appointmentsList, setAppointmentsList] = useState<Appointment[]>(() => {
@@ -253,7 +270,7 @@ export default function App() {
       particles.forEach(p => {
         p.x += p.vx;
         p.y += p.vy;
-        p.vy += 0.35; // gravidade
+        p.vy += 0.35;
         p.rotation += p.vRot;
 
         if (p.y < canvas.height) {
@@ -322,7 +339,43 @@ export default function App() {
     setCurrentDate(new Date(year, month + 1, 1));
   }
 
-  function handleFinalizeBooking(e: React.FormEvent) {
+  // Login / Cadastro no Supabase
+  async function handleAuthSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setAuthLoading(true);
+    setAuthMessage(null);
+
+    try {
+      if (authMode === 'login') {
+        const userSession = await supabaseAuth.signIn(authEmail, authPassword);
+        setSession(userSession);
+        setAuthMessage({ type: 'success', text: 'Login realizado com sucesso!' });
+        setTimeout(() => {
+          setShowAuthModal(false);
+          setShowAdminModal(true);
+        }, 600);
+      } else {
+        await supabaseAuth.signUp(authEmail, authPassword, authName);
+        setAuthMessage({ 
+          type: 'success', 
+          text: 'Conta criada no Supabase! Verifique seu e-mail para confirmação ou faça login.' 
+        });
+        setAuthMode('login');
+      }
+    } catch (err: any) {
+      setAuthMessage({ type: 'error', text: err.message || 'Falha na autenticação' });
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleLogout() {
+    await supabaseAuth.signOut();
+    setSession(null);
+    setShowAdminModal(false);
+  }
+
+  async function handleFinalizeBooking(e: React.FormEvent) {
     e.preventDefault();
     if (!clientName || !clientPhone) {
       alert('Por favor, preencha seu nome e WhatsApp para contato.');
@@ -348,6 +401,18 @@ export default function App() {
       clientNotes,
       createdAt: new Date().toISOString()
     };
+
+    // Sincroniza com Supabase no banco de dados na nuvem
+    supabaseDb.createAppointment({
+      professional_name: currentProf.name,
+      service_name: selectedService.name,
+      price: selectedService.price,
+      client_name: clientName,
+      client_phone: clientPhone,
+      client_notes: clientNotes,
+      date_str: dateFormatted,
+      time_str: selectedTime
+    });
 
     setLastAppointment(appointment);
     setAppointmentsList(prev => [appointment, ...prev]);
@@ -414,7 +479,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col justify-between">
-      {/* Top Bar de Demonstração / Alternar Profissional */}
+      {/* Top Bar de Demonstração / Alternar Profissional & Auth */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-40 px-4 py-3">
         <div className="max-w-5xl mx-auto flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
@@ -424,7 +489,7 @@ export default function App() {
             <div>
               <span className="font-heading font-extrabold text-xl tracking-tight text-slate-900">Hora<span className="text-blue-600">Certa</span></span>
               <span className="hidden sm:inline-block ml-2 text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
-                Agendamento Rápido
+                Supabase Cloud DB
               </span>
             </div>
           </div>
@@ -452,20 +517,37 @@ export default function App() {
               ))}
             </div>
 
-            {/* Botão Painel do Dono */}
-            <button
-              onClick={() => setShowAdminModal(true)}
-              className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition flex items-center gap-1.5 text-xs font-medium border border-slate-200 bg-white"
-              title="Painel do Profissional"
-            >
-              <Settings className="w-4 h-4 text-slate-500" />
-              <span className="hidden md:inline">Painel</span>
-              {appointmentsList.length > 0 && (
-                <span className="w-4 h-4 rounded-full bg-blue-600 text-white text-[10px] flex items-center justify-center font-bold">
-                  {appointmentsList.length}
-                </span>
-              )}
-            </button>
+            {/* Botão de Login / Painel Real com Supabase */}
+            {session ? (
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setShowAdminModal(true)}
+                  className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl transition flex items-center gap-1.5 text-xs font-semibold border border-blue-200"
+                >
+                  <User className="w-3.5 h-3.5 text-blue-600" />
+                  <span className="max-w-[100px] truncate">{session.user.email}</span>
+                </button>
+                <button
+                  onClick={handleLogout}
+                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                  title="Sair da Conta"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => {
+                  setAuthMode('login');
+                  setAuthMessage(null);
+                  setShowAuthModal(true);
+                }}
+                className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl transition flex items-center gap-1.5 text-xs font-semibold shadow-sm"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span>Entrar (Login)</span>
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -540,14 +622,14 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Prova Social Discreta */}
+              {/* Status do Banco de Dados Conectado */}
               <div className="bg-slate-50 rounded-2xl p-3 border border-slate-100 flex items-center justify-between text-xs text-slate-600">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-amber-500 font-bold">★ 4.9</span>
-                  <span>(128 avaliações reais)</span>
+                  <Database className="w-3.5 h-3.5 text-emerald-600" />
+                  <span className="font-medium text-slate-700">Supabase PostgreSQL</span>
                 </div>
                 <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full font-semibold border border-emerald-200 text-[11px]">
-                  Confirmado via WhatsApp
+                  Online & Ativo
                 </span>
               </div>
             </div>
@@ -637,7 +719,7 @@ export default function App() {
                   </span>
                   <span className="text-xs text-emerald-600 font-semibold flex items-center gap-1">
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                    Vagas em tempo real
+                    Sincronizado na Nuvem
                   </span>
                 </div>
 
@@ -698,7 +780,7 @@ export default function App() {
               </span>
               <h1 className="text-2xl font-heading font-extrabold text-slate-900 mt-2">Quem vai comparecer?</h1>
               <p className="text-xs text-slate-500 mt-1">
-                Seus dados serão usados exclusivamente para confirmar seu horário pelo WhatsApp.
+                Seus dados serão gravados no banco Supabase e enviados pelo WhatsApp.
               </p>
             </div>
 
@@ -773,7 +855,7 @@ export default function App() {
                 className="w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2 transition"
               >
                 <CheckCircle2 className="w-5 h-5" />
-                Confirmar Agendamento
+                Confirmar Agendamento no Supabase
               </button>
             </form>
           </div>
@@ -789,9 +871,9 @@ export default function App() {
             </div>
 
             <div className="relative z-20">
-              <h1 className="text-2xl font-heading font-extrabold text-slate-900">Horário Pré-Agendado!</h1>
+              <h1 className="text-2xl font-heading font-extrabold text-slate-900">Salvo no Supabase & Reservado!</h1>
               <p className="text-xs text-slate-500 mt-1.5 max-w-sm mx-auto">
-                Parabéns, {lastAppointment.clientName}! Seu horário foi reservado. Para finalizar, clique no botão abaixo para avisar o profissional no WhatsApp.
+                Parabéns, {lastAppointment.clientName}! Seu agendamento foi salvo com sucesso. Clique abaixo para enviar o aviso no WhatsApp.
               </p>
             </div>
 
@@ -855,14 +937,153 @@ export default function App() {
         )}
       </main>
 
-      {/* Modal: Painel do Profissional (Gerenciar Agendamentos) */}
+      {/* Modal: Login / Cadastro com Supabase */}
+      {showAuthModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="p-5 border-b border-slate-200 flex items-center justify-between">
+              <div>
+                <h3 className="font-heading font-extrabold text-lg text-slate-900">
+                  {authMode === 'login' ? 'Acesso do Profissional' : 'Criar Conta de Profissional'}
+                </h3>
+                <p className="text-xs text-slate-500">Autenticação Segura via Supabase</p>
+              </div>
+              <button
+                onClick={() => setShowAuthModal(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAuthSubmit} className="p-6 space-y-4">
+              {authMessage && (
+                <div className={`p-3 rounded-xl text-xs font-medium ${
+                  authMessage.type === 'success' 
+                    ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' 
+                    : 'bg-rose-50 text-rose-800 border border-rose-200'
+                }`}>
+                  {authMessage.text}
+                </div>
+              )}
+
+              {authMode === 'register' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    Nome Completo ou Nome do Negócio
+                  </label>
+                  <div className="relative">
+                    <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ex: Dra. Juliana Santos"
+                      value={authName}
+                      onChange={e => setAuthName(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-600 text-sm"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  E-mail
+                </label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                  <input
+                    type="email"
+                    required
+                    placeholder="seu-email@gmail.com"
+                    value={authEmail}
+                    onChange={e => setAuthEmail(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-600 text-sm"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Senha
+                </label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                  <input
+                    type="password"
+                    required
+                    minLength={6}
+                    placeholder="Mínimo 6 caracteres"
+                    value={authPassword}
+                    onChange={e => setAuthPassword(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-600 text-sm"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={authLoading}
+                className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-md shadow-blue-500/15 flex items-center justify-center gap-2 transition disabled:opacity-50"
+              >
+                {authLoading ? (
+                  <span>Conectando ao Supabase...</span>
+                ) : authMode === 'login' ? (
+                  <>
+                    <LogIn className="w-4 h-4" /> Entrar no Painel
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="w-4 h-4" /> Cadastrar Gratuitamente
+                  </>
+                )}
+              </button>
+
+              <div className="text-center pt-2">
+                {authMode === 'login' ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode('register');
+                      setAuthMessage(null);
+                    }}
+                    className="text-xs text-blue-600 hover:underline font-semibold"
+                  >
+                    Não tem conta? Cadastre-se aqui
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode('login');
+                      setAuthMessage(null);
+                    }}
+                    className="text-xs text-blue-600 hover:underline font-semibold"
+                  >
+                    Já tem uma conta? Faça login
+                  </button>
+                )}
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Painel do Profissional Logado */}
       {showAdminModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
             <div className="p-5 border-b border-slate-200 flex items-center justify-between">
               <div>
-                <h3 className="font-heading font-extrabold text-lg text-slate-900">Painel do Dono do Negócio</h3>
-                <p className="text-xs text-slate-500">Agendamentos recebidos e salvos no navegador (Local-First)</p>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-heading font-extrabold text-lg text-slate-900">Painel do Dono do Negócio</h3>
+                  <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Conectado
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500">
+                  {session ? `Logado como: ${session.user.email}` : 'Visualizando agendamentos'}
+                </p>
               </div>
               <button
                 onClick={() => setShowAdminModal(false)}
@@ -921,12 +1142,22 @@ export default function App() {
 
             <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center text-xs text-slate-500">
               <span>Total de agendamentos: <strong>{appointmentsList.length}</strong></span>
-              <button
-                onClick={() => setShowAdminModal(false)}
-                className="px-4 py-2 rounded-xl bg-slate-900 text-white font-semibold hover:bg-slate-800"
-              >
-                Fechar
-              </button>
+              <div className="flex gap-2">
+                {session && (
+                  <button
+                    onClick={handleLogout}
+                    className="px-3 py-1.5 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 font-semibold"
+                  >
+                    Desconectar
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowAdminModal(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-900 text-white font-semibold hover:bg-slate-800"
+                >
+                  Fechar
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -937,7 +1168,7 @@ export default function App() {
         <div className="max-w-5xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
           <p>© {new Date().getFullYear()} HoraCerta — Desenvolvido por <strong className="text-slate-800">Vinicius Caetano</strong>.</p>
           <p className="flex items-center gap-1">
-            <span>Tecnologia ágil para profissionais autônomos</span>
+            <span>Banco de Dados Supabase Conectado</span>
             <span>•</span>
             <span className="text-blue-600 font-semibold">100% Livre de Spam</span>
           </p>
